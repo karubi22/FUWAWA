@@ -80,12 +80,14 @@ COUNTRY_ZH = {
     "MN": "蒙古", "NP": "尼泊尔", "LK": "斯里兰卡", "MM": "缅甸",
 }
 
-# 静态优选域名池
+# 静态优选域名池 (兜底: 优选 API 不可用/被墙时使用; 建议替换成你实测延迟最低的域名)
 EDGE_HOSTS = [
     h.strip()
     for h in os.environ.get(
         "EDGE_HOSTS",
-        "",
+        "www.visa.com:443,www.shopify.com:443,time.is:443,skk.moe:443,"
+        "icook.hk:443,icook.tw:443,japan.com:443,malaysia.com:443,"
+        "singapore.com:443,russia.com:443,www.udemy.com:443,www.digitalocean.com:443",
     ).split(",")
     if h.strip()
 ]
@@ -419,6 +421,8 @@ def build_nodes_text(data, edge_hosts):
     """
     countries = data["countries"]
     edge = edge_hosts
+    if not edge:
+        die("入口地址池为空 (静态优选域名与优选 API 均无可用入口), 无法生成 nodes.txt")
     lines = []
     idx = 0
     ordered = sorted(countries.items(), key=lambda kv: (-int(kv[1].get("count") or 0), str(kv[1].get("code") or kv[0])))
