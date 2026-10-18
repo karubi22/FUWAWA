@@ -46,6 +46,8 @@ CONCURRENCY = max(1, int(os.environ.get("CHECK_CONCURRENCY", "32")))
 CHECK_TIMEOUT = float(os.environ.get("CHECK_TIMEOUT", "90"))
 MAX_CHECK_NODES = int(os.environ.get("MAX_CHECK_NODES", "0"))
 HTTP_TIMEOUT = int(os.environ.get("HTTP_TIMEOUT", "60"))
+# Worker 不可用时是否回退到「数据源判定」模式 (默认开启, 保证网关一定能跑出结果)
+ALLOW_UNVERIFIED = os.environ.get("ALLOW_UNVERIFIED", "1").strip().lower() not in ("0", "false", "no", "")
 PUBLIC_DIR = os.environ.get("PUBLIC_DIR", os.path.join(REPO_DIR, "public"))
 TEMPLATE_HTML = os.path.join(REPO_DIR, "web", "index.html")
 
@@ -155,7 +157,7 @@ def parse_csv(text):
     header = lines[header_idx].lstrip("#").split(",")
     data_lines = lines[header_idx + 1:]
     idx = {}
-    for col in ("hostname", "ip", "countrylong", "countryshort", "openvpn_configdata_base64"):
+    for col in ("hostname", "ip", "countrylong", "countryshort", "operator", "openvpn_configdata_base64"):
         for i, h in enumerate(header):
             if h.strip().lstrip("*").lower() == col:
                 idx[col] = i
@@ -170,6 +172,7 @@ def parse_csv(text):
         "ip": idx.get("ip", 1),
         "countrylong": idx.get("countrylong", 5),
         "countryshort": idx.get("countryshort", 6),
+        "operator": idx.get("operator"),
         "openvpn_configdata_base64": idx.get("openvpn_configdata_base64", len(header) - 1),
     }
 
@@ -180,11 +183,14 @@ def parse_csv(text):
         host = fields[pos["hostname"]].strip()
         ip = fields[pos["ip"]].strip()
         if not host or not ip: continue
+        op_idx = pos["operator"]
+        operator = fields[op_idx].strip() if op_idx is not None and op_idx < len(fields) else ""
         rows.append({
             "host": host,
             "ip": ip,
             "country_long": fields[pos["countrylong"]].strip(),
             "country_short": fields[pos["countryshort"]].strip(),
+            "operator": operator,
             "config_b64": fields[pos["openvpn_configdata_base64"]].strip(),
         })
     return rows
@@ -207,6 +213,7 @@ def parse_mirror_json(data):
             "ip": ip,
             "country_long": str(s.get("countrylong") or s.get("country_long") or s.get("country") or "").strip(),
             "country_short": str(s.get("countryshort") or s.get("country_short") or "").strip(),
+            "operator": str(s.get("operator") or "").strip(),
             "config_b64": str(s.get("openvpn_configdata_base64") or s.get("config_b64") or "").strip(),
         })
     return rows
@@ -295,7 +302,7 @@ def to_sstp_nodes(rows):
         host = r["host"]
         if not host.endswith(".opengw.net"):
             host = f"{host}.opengw.net"
-        nodes.append({"host": host, "port": port, "ip": r["ip"], "country": r["country_long"], "country_code": r["country_short"]})
+        nodes.append({"host": host, "port": port, "ip": r["ip"], "country": r["country_long"], "country_code": r["country_short"], "operator": r.get("operator", "")})
     return nodes
 
 def dedupe(nodes):
